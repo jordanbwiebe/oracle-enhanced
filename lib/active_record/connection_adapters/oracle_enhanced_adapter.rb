@@ -288,9 +288,25 @@ module ActiveRecord
         @quoted_column_names, @quoted_table_names = {}, {}
         @config = config
 
-        path = "//"+@config[:host]+":"+@config[:port].to_s+"/"+@config[:database]
-	@conn = OCI8.new @config[:username], @config[:password], path
-        
+        username = config[:username] && config[:username].to_s
+        password = config[:password] && config[:password].to_s
+        database = config[:database] && config[:database].to_s
+        privilege = config[:privilege] && config[:privilege].to_sym
+        host, port = config[:host], config[:port]
+
+        # connection using host, port and database name
+        connection_string = if host || port
+          host ||= 'localhost'
+          host = "[#{host}]" if host =~ /^[^\[].*:/  # IPv6
+          port ||= 1521
+          "//#{host}:#{port}/#{database}"
+        # if no host is specified then assume that
+        # database parameter is TNS alias or TNS connection string
+        else
+          database
+        end
+
+	      @geo_conn = OCI8.new username, password, connection_string, privilege
 
         @statements = StatementPool.new(connection, config.fetch(:statement_limit) { 250 })
         @enable_dbms_output = false
@@ -829,11 +845,11 @@ module ActiveRecord
       def bind_georuby_objects_to_sdo_geometry(i, cursor, val)
         case val.class
         when GeoRuby::SimpleFeatures::Point
-          cursor.bind_param(i + 1, create_sdo_geometry_object(@conn, val, 2001) , OCI8::Object::Mdsys::SdoGeometry)
+          cursor.bind_param(i + 1, create_sdo_geometry_object(@geo_conn, val, 2001) , OCI8::Object::Mdsys::SdoGeometry)
         when GeoRuby::SimpleFeatures::LineString
-          cursor.bind_param(i + 1, create_sdo_geometry_object(@conn, val, 2002) , OCI8::Object::Mdsys::SdoGeometry)
+          cursor.bind_param(i + 1, create_sdo_geometry_object(@geo_conn, val, 2002) , OCI8::Object::Mdsys::SdoGeometry)
         when GeoRuby::SimpleFeatures::Polygon
-          cursor.bind_param(i + 1, create_sdo_geometry_object(@conn, val, 2003) , OCI8::Object::Mdsys::SdoGeometry)
+          cursor.bind_param(i + 1, create_sdo_geometry_object(@geo_conn, val, 2003) , OCI8::Object::Mdsys::SdoGeometry)
         end
       end
       
@@ -854,12 +870,12 @@ module ActiveRecord
               cursor.bind_returning_param(returning_id_index, Integer)
             elsif col.class == ActiveRecord::ConnectionAdapters::SpatialOracleColumn
               if val.class == GeoRuby::SimpleFeatures::Point
-                cursor.bind_param(i + 1, create_sdo_geometry_object(@conn, val, 2001, col.name) , OCI8::Object::Mdsys::SdoGeometry)
+                cursor.bind_param(i + 1, create_sdo_geometry_object(@geo_conn, val, 2001, col.name) , OCI8::Object::Mdsys::SdoGeometry)
 
               elsif val.class == GeoRuby::SimpleFeatures::LineString
-                cursor.bind_param(i + 1, create_sdo_geometry_object(@conn, val, 2002, col.name) , OCI8::Object::Mdsys::SdoGeometry)  
+                cursor.bind_param(i + 1, create_sdo_geometry_object(@geo_conn, val, 2002, col.name) , OCI8::Object::Mdsys::SdoGeometry)  
               elsif val.class == GeoRuby::SimpleFeatures::Polygon
-                cursor.bind_param(i + 1, create_sdo_geometry_object(@conn, val, 2003, col.name) , OCI8::Object::Mdsys::SdoGeometry)
+                cursor.bind_param(i + 1, create_sdo_geometry_object(@geo_conn, val, 2003, col.name) , OCI8::Object::Mdsys::SdoGeometry)
               else
                 cursor.bind_param(i + 1, OCI8::Object::Mdsys::SdoGeometry)
               end  
